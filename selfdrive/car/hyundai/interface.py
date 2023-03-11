@@ -4,7 +4,7 @@ from panda import Panda
 from common.params import Params
 from selfdrive.config import Conversions as CV
 from selfdrive.car.hyundai.values import CAR, EV_CAR, HYBRID_CAR, LEGACY_SAFETY_MODE_CAR, Buttons, CarControllerParams
-from selfdrive.car.hyundai.radar_interface import RADAR_START_ADDR
+# from selfdrive.car.hyundai.radar_interface import RADAR_START_ADDR
 from selfdrive.car import STD_CARGO_KG, scale_rot_inertia, scale_tire_stiffness, gen_empty_fingerprint, get_safety_config
 from selfdrive.car.interfaces import CarInterfaceBase
 from selfdrive.car.disable_ecu import disable_ecu
@@ -23,7 +23,7 @@ class CarInterface(CarInterfaceBase):
 
     ret.carName = "hyundai"
     ret.safetyConfigs = [get_safety_config(car.CarParams.SafetyModel.hyundai, 0)]
-    ret.radarOffCan = RADAR_START_ADDR not in fingerprint[1]
+    ret.radarOffCan = 0x510 not in fingerprint[1]
 
     # WARNING: disabling radar also disables AEB (and we show the same warning on the instrument cluster as if you manually disabled AEB)
     ret.openpilotLongitudinalControl = Params().get_bool("DisableRadar") and (candidate not in LEGACY_SAFETY_MODE_CAR)
@@ -32,7 +32,7 @@ class CarInterface(CarInterfaceBase):
 
     ret.steerActuatorDelay = 0.1  # Default delay
     ret.steerRateCost = 0.5
-    ret.steerLimitTimer = 0.4
+    ret.steerLimitTimer = 0.8
     tire_stiffness_factor = 1.
 
     ret.stoppingControl = True
@@ -116,6 +116,7 @@ class CarInterface(CarInterfaceBase):
       ret.lateralTuning.indi.actuatorEffectivenessBP = [0.]
       ret.lateralTuning.indi.actuatorEffectivenessV = [2.3]
       ret.minSteerSpeed = 60 * CV.KPH_TO_MS
+      ret.maxSteeringAngleDeg = 90.
     elif candidate in (CAR.KONA, CAR.KONA_EV, CAR.KONA_HEV):
       ret.lateralTuning.pid.kf = 0.00005
       ret.mass = {CAR.KONA_EV: 1685., CAR.KONA_HEV: 1425.}.get(candidate, 1275.) + STD_CARGO_KG
@@ -275,8 +276,21 @@ class CarInterface(CarInterfaceBase):
 
     ret.enableBsm = 0x58b in fingerprint[0]
 
+    # ignore CAN2 address if L-CAN on the same BUS
+    ret.mdpsBus = 1 if 0x251 in fingerprint[1] and 0x510 not in fingerprint[1] else 0
+    ret.sasBus = 1 if 0x2b0 in fingerprint[1] and 0x510 not in fingerprint[1] else 0
+    ret.sccBus = 0 if 0x420 in fingerprint[0] else 1 if 0x420 in fingerprint[1] and 0x510 not in fingerprint[1] \
+                                                                     else 2 if 0x420 in fingerprint[2] else -1
+    #ret.radarOffCan = ret.sccBus == -1
+    #ret.openpilotLongitudinalControl = Params().get('LongControlEnabled') == b'1'
+    #ret.enableCruise = not ret.radarOffCan
+    #ret.spasEnabled = False
+
     if ret.openpilotLongitudinalControl:
       ret.safetyConfigs[0].safetyParam |= Panda.FLAG_HYUNDAI_LONG
+    # set safety_hyundai_community only for non-SCC, MDPS harrness or SCC harrness cars or cars that have unknown issue
+    if ret.radarOffCan or ret.mdpsBus == 1 or ret.sccBus == 1 or Params().get_bool("CommunityFeaturesToggle"):
+      ret.safetyModel = car.CarParams.SafetyModel.hyundaiCommun
 
     return ret
 
@@ -288,10 +302,22 @@ class CarInterface(CarInterfaceBase):
   def update(self, c, can_strings):
     self.cp.update_strings(can_strings)
     self.cp_cam.update_strings(can_strings)
+    self.cp_body.update_strings(can_strings)
 
-    ret = self.CS.update(self.cp, self.cp_cam)
-    ret.canValid = self.cp.can_valid and self.cp_cam.can_valid
+
+    ret = self.CS.update(self.cp, self.cp_cam, self.cp_body)
+    ret.canValid = self.cp.can_valid and self.cp_cam.can_valid and self.cp_body.canValid
     ret.steeringRateLimited = self.CC.steer_rate_limited if self.CC is not None else False
+
+    # most HKG cars has no long control
+    #if self.mad_mode_enabled and not self.CC.longcontrol:
+      #ret.cruiseState.enabled = ret.cruiseState.available
+      #ret.brakePressed = ret.gasPressed = False
+    # turning indicator alert logic
+    # if (ret.leftBlinker or ret.rightBlinker or self.CC.turning_signal_timer) and ret.vEgo < LANE_CHANGE_SPEED_MIN - 1.2:
+    #   self.CC.turning_indicator_alert = True
+    # else:
+    #   self.CC.turning_indicator_alert = False
 
     events = self.create_common_events(ret, pcm_enable=self.CS.CP.pcmCruise)
 
@@ -322,6 +348,12 @@ class CarInterface(CarInterfaceBase):
           be.type = ButtonType.cancel
         buttonEvents.append(be)
 
+      # if self.CS.cruise_main_button != self.CS.prev_cruise_main_button:
+      #   be = car.CarState.ButtonEvent.new_message()
+      #   be.type = ButtonType.altButton3
+      #   be.pressed = bool(self.CS.cruise_main_button)
+      #   buttonEvents.append(be)
+
         ret.buttonEvents = buttonEvents
 
         for b in ret.buttonEvents:
@@ -333,9 +365,9 @@ class CarInterface(CarInterfaceBase):
             events.add(EventName.buttonCancel)
 
     # low speed steer alert hysteresis logic (only for cars with steer cut off above 10 m/s)
-    if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
+    if ret.vEgo < (self.CP.minSteerSpeed + 0.2) and self.CP.minSteerSpeed > 10.:
       self.low_speed_alert = True
-    if ret.vEgo > (self.CP.minSteerSpeed + 4.):
+    if ret.vEgo > (self.CP.minSteerSpeed + 0.7):
       self.low_speed_alert = False
     if self.low_speed_alert:
       events.add(car.CarEvent.EventName.belowSteerSpeed)
@@ -350,5 +382,6 @@ class CarInterface(CarInterfaceBase):
     ret = self.CC.update(c, c.enabled, self.CS, self.frame, c.actuators,
                          c.cruiseControl.cancel, hud_control.visualAlert, hud_control.setSpeed, hud_control.leftLaneVisible,
                          hud_control.rightLaneVisible, hud_control.leftLaneDepart, hud_control.rightLaneDepart)
+                         # c.hudControl.setSpeed, c.hudControl.leadVisible)
     self.frame += 1
     return ret
