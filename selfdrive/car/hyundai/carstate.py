@@ -1,6 +1,6 @@
 import copy
 from cereal import car
-from selfdrive.car.hyundai.values import DBC, STEER_THRESHOLD, FEATURES, EV_CAR, HYBRID_CAR
+from selfdrive.car.hyundai.values import DBC, STEER_THRESHOLD, FEATURES, EV_CAR, HYBRID_CAR, CAR
 from selfdrive.car.interfaces import CarStateBase
 from opendbc.can.parser import CANParser
 from opendbc.can.can_define import CANDefine
@@ -155,7 +155,7 @@ class CarState(CarStateBase):
       self.mdps11_stat = cp_mdps.vl["MDPS11"]["CF_Mdps_Stat"]
     self.lkas_error = cp_cam.vl["LKAS11"]["CF_Lkas_LdwsSysState"] == 7
     if not self.lkas_error and self.car_fingerprint not in [CAR.SONATA,CAR.PALISADE,
-                    CAR.SONATA_HEV, CAR.SANTA_FE, CAR.KONA_EV, CAR.NIRO_EV, CAR.KONA]:
+                    CAR.SANTA_FE, CAR.KONA_EV, CAR.KONA]: #CAR.SONATA_HEV, CAR.NIRO_EV
       self.lkas_button_on = bool(cp_cam.vl["LKAS11"]["CF_Lkas_LdwsSysState"])
 
     return ret
@@ -290,14 +290,16 @@ class CarState(CarStateBase):
         ("CF_Mdps_FailStat", "MDPS12"),
         ("CR_Mdps_OutTq", "MDPS12"),
       ]
-    else checks.remove(("MDPS12", 50))
+    else:
+      checks.remove(("MDPS12", 50))
 
     if CP.sasBus == 0:
       signals += [
         ("SAS_Angle", "SAS11"),
         ("SAS_Speed", "SAS11"),
         ]
-    else checks.remove(("SAS11", 100))
+    else:
+      checks.remove(("SAS11", 100))
 
     if CP.enableBsm:
       signals += [

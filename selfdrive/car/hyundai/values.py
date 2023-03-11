@@ -22,6 +22,8 @@ class CarControllerParams:
     self.STEER_DRIVER_ALLOWANCE = 50
     self.STEER_DRIVER_MULTIPLIER = 2
     self.STEER_DRIVER_FACTOR = 1
+    self.STEER_ANG_MAX = 360          # SPAS Max Angle
+    self.STEER_ANG_MAX_RATE = 1.5    # SPAS Degrees per ms
 
 class CAR:
   # Hyundai

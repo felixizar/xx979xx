@@ -1,9 +1,10 @@
 from cereal import car
-from common.realtime import DT_CTRL
+# from common.realtime import DT_CTRL
 from common.numpy_fast import clip, interp
 from selfdrive.config import Conversions as CV
 from selfdrive.car import apply_std_steer_torque_limits
-from selfdrive.car.hyundai.hyundaican import create_lkas11, create_clu11, create_lfahda_mfc, create_acc_commands, create_acc_opt, create_frt_radar_opt
+from selfdrive.car.hyundai.hyundaican import create_lkas11, create_clu11, create_lfahda_mfc, create_acc_commands, create_acc_opt, create_frt_radar_opt, \
+                                            create_mdps12, create_spas11, create_spas12, create_ems11
 from selfdrive.car.hyundai.values import Buttons, CarControllerParams, CAR, FEATURES
 from opendbc.can.packer import CANPacker
 
@@ -64,13 +65,13 @@ class CarController():
 
     # SPAS limit angle extremes for safety
     if CS.spas_enabled:
-      apply_steer_ang_req = clip(actuators.steerAngle, -1*(STEER_ANG_MAX), STEER_ANG_MAX)
+      apply_steer_ang_req = clip(actuators.steerAngle, -1*(self.p.STEER_ANG_MAX), self.p.STEER_ANG_MAX)
       # SPAS limit angle rate for safety
-      if abs(self.apply_steer_ang - apply_steer_ang_req) > STEER_ANG_MAX_RATE:
+      if abs(self.apply_steer_ang - apply_steer_ang_req) > self.p.STEER_ANG_MAX_RATE:
         if apply_steer_ang_req > self.apply_steer_ang:
-          self.apply_steer_ang += STEER_ANG_MAX_RATE
+          self.apply_steer_ang += self.p.STEER_ANG_MAX_RATE
         else:
-          self.apply_steer_ang -= STEER_ANG_MAX_RATE
+          self.apply_steer_ang -= self.p.STEER_ANG_MAX_RATE
       else:
         self.apply_steer_ang = apply_steer_ang_req
     spas_active = CS.spas_enabled and enabled and (self.spas_always or CS.out.vEgo < 7.0) # 25km/h
@@ -93,9 +94,9 @@ class CarController():
     if clu11_speed > enabled_speed or not lkas_active:
       enabled_speed = clu11_speed
 
-    if not(min_set_speed < set_speed < 255 * CV.KPH_TO_MS):
-      set_speed = min_set_speed
-    set_speed *= CV.MS_TO_MPH if CS.is_set_speed_in_mph else CV.MS_TO_KPH
+    # if not(min_set_speed < set_speed < 255 * CV.KPH_TO_MS):
+    #   set_speed = min_set_speed
+    # set_speed *= CV.MS_TO_MPH if CS.is_set_speed_in_mph else CV.MS_TO_KPH
 
     can_sends = []
 
@@ -149,7 +150,7 @@ class CarController():
 
       stopping = (actuators.longControlState == LongCtrlState.stopping)
       set_speed_in_units = hud_speed * (CV.MS_TO_MPH if CS.clu11["CF_Clu_SPEED_UNIT"] == 1 else CV.MS_TO_KPH)
-      can_sends.extend(create_acc_commands(self.packer, enabled, accel, jerk, int(frame / 2), lead_visible, set_speed_in_units, stopping))
+      can_sends.extend(create_acc_commands(self.packer, enabled, accel, jerk, int(frame / 2), lead_visible, set_speed_in_units, stopping, self.car_fingerprint))
       self.accel = accel
 
     # 20 Hz LFA MFA message
