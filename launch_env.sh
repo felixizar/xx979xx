@@ -19,4 +19,4 @@ if [ -z "$PASSIVE" ]; then
 fi
 
 export STAGING_ROOT="/data/safe_staging"
-export NOSENSOR=1
+export NOSENSOR="1"
