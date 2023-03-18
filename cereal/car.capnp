@@ -455,6 +455,11 @@ struct CarParams {
 
   wheelSpeedFactor @63 :Float32; # Multiplier on wheels speeds to computer actual speeds
 
+  mdpsBus @66: Int8;
+  sasBus @67: Int8;
+  sccBus @68: Int8;
+  spasEnabled @69: Bool;
+
   struct SafetyConfig {
     safetyModel @0 :SafetyModel;
     safetyParam @1 :Int16;
