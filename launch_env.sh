@@ -20,3 +20,5 @@ fi
 
 export STAGING_ROOT="/data/safe_staging"
 export NOSENSOR="1"
+# export FINGERPRINT="HYUNDAI GENESIS 2015-2016"
+export SKIP_FW_QUERY="1"
